@@ -9,6 +9,9 @@ public class Solver
 	
 	private int nBranchesVisited = 1;
 	
+	/*
+	 * Find the cell that has the lower number of penciled digits
+	 */
 	private static class FindCellWithLowestPencilCount implements OnCell
 	{
 		private int minRow = -1;
@@ -27,9 +30,14 @@ public class Solver
 			}
 			return true;
 		}
-
 	}
 
+	/**
+	 * Solve a sudoku puzzle
+	 * @param g grid
+	 * @param depth the level of recursion (for display purposes only)
+	 * @return true if the puzzle was solved
+	 */
 	public boolean solve(Grid g, int depth)
 	{
 		while (true)
@@ -41,32 +49,53 @@ public class Solver
 				logger.info("{} branches visited", nBranchesVisited);
 				return true;
 			}
-			if (!g.checkValid())
-			{
-				logger.info("Puzzle invalid");
-				return false;
-			}
 			
-			if (!g.computePenciled())
+			try
 			{
-				FindCellWithLowestPencilCount onCell = new FindCellWithLowestPencilCount();
-				g.scanGrid(onCell);
-				logger.info("{}> Branching on cell {}/{}", new Object[] { depth, onCell.minRow + 1, onCell.minCol + 1});
-				for (int i = 0; i < 9; i++)
+				/* Compute the penciled digits
+				 * If the function returns true, at least one cell was filled and just continue
+				 * because we made some progress
+				 */
+				if (!g.computePenciled())
 				{
-					Cell c = g.cellAt(onCell.minRow, onCell.minCol);
-					if (c.penciled.digits[i])
+					/*
+					 * We can't decide which digit to choose for sure. We have to make a guess.
+					 * Find the cell with the lowest number of options (penciled digits) and
+					 * choose each one in turn
+					 */
+					FindCellWithLowestPencilCount onCell = new FindCellWithLowestPencilCount();
+					g.scanGrid(onCell);
+					logger.info("{}> Branching on cell {}/{}", new Object[] { depth, onCell.minRow + 1, onCell.minCol + 1});
+					for (int i = 0; i < 9; i++)
 					{
-						logger.info("Option {}", i + 1);
-						Grid g2 = g.clone();
-						g2.cellAt(onCell.minRow, onCell.minCol).digit = i;
-						boolean solved = solve(g2, depth + 1);
-						if (solved)
-							return true;
+						Cell c = g.cellAt(onCell.minRow, onCell.minCol);
+						if (c.penciled.digits[i])
+						{
+							/*
+							 * Choose that option. Make a copy of the grid because we are going to try it out 
+							 * and there is no guarantee that it will be the right choice. We may end up
+							 * backtracking and we should leave the grid untouched if we have to resume 
+							 */
+							logger.info("Option {}", i + 1);
+							Grid g2 = g.clone();
+							// Fill that cell with that option
+							g2.cellAt(onCell.minRow, onCell.minCol).digit = i;
+							// Try to solve that new grid
+							boolean solved = solve(g2, depth + 1);
+							// If we were successful, that was the right choice
+							if (solved)
+								return true;
+							// If not, try with the next option
+						}
 					}
+					// All the options were wrong, this is a dead end
+					nBranchesVisited++;
+					logger.info("{}> Backtrack", depth);
+					return false;
 				}
-				nBranchesVisited++;
-				logger.info("{}> Backtrack", depth);
+			}
+			catch (InvalidPuzzleException e)
+			{
 				return false;
 			}
 		}

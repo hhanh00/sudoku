@@ -6,17 +6,27 @@ import org.apache.log4j.BasicConfigurator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * The Soduku grid
+ * @author hanh
+ */
 public class Grid implements Cloneable
 {
 	private static Logger logger = LoggerFactory.getLogger(Grid.class);
-	public Cell[] cells = new Cell[9 * 9];
+	private Cell[] cells = new Cell[9 * 9];
 
+	/**
+	 * Constructor for a blank grid
+	 */
 	public Grid()
 	{
 		for (int i = 0; i < 9 * 9; i++)
 			cells[i] = new Cell();
 	}
 
+	/**
+	 * Make a deep copy
+	 */
 	public Grid clone()
 	{
 		Grid g = new Grid();
@@ -25,6 +35,10 @@ public class Grid implements Cloneable
 		return g;
 	}
 
+	/**
+	 * Set the grid based on the string of 81 characters that represent the 9x9 grid
+	 * @param grid
+	 */
 	public void set(String grid)
 	{
 		for (int i = 0; i < 9 * 9; i++)
@@ -39,29 +53,40 @@ public class Grid implements Cloneable
 		}
 	}
 
+	/**
+	 * Return the cell at position row, col
+	 * @param row index from 0 to 8
+	 * @param col index from 0 to 8
+	 * @return cell
+	 */
 	public Cell cellAt(int row, int col)
 	{
 		return cells[row * 9 + col];
 	}
 
-	public void setCellAt(int row, int col, Cell c)
+	/**
+	 * Compute the penciled digits for each cell of the grid
+	 * Then if there are cells with only one penciled digit, fill the cell with that digit 
+	 * @return true if at least a cell was filled in
+	 * @throws InvalidPuzzleException if there are cells with no possible digit or if after
+	 * setting the unique digits, the puzzle has repeated digits
+	 */
+	public boolean computePenciled() throws InvalidPuzzleException
 	{
-		cells[row * 9 + col] = c;
-	}
-
-	public boolean computePenciled()
-	{
+		// pencil every cell in the grid
 		scanGrid(new OnCell()
 		{
 			@Override
-			public boolean onCell(int row, int col, final Cell c)
+			public boolean onCell(int row, int col, final Cell c) throws InvalidPuzzleException
 			{
+				// skip the cells that have a digit
 				if (c.digit >= 0)
 					c.penciled = PossibleDigits.None;
 				else
 				{
+					// scan all the neighbours and pencil in the remaining digits
 					c.penciled.clear();
-					scanNeighbours(row, col, new OnCell()
+					scanNeighbors(row, col, new OnCell()
 					{
 						@Override
 						public boolean onCell(int row, int col, Cell scanCell)
@@ -76,18 +101,22 @@ public class Grid implements Cloneable
 			}
 		});
 
+		// output value, java won't let the inner function modify a local variable directly
 		final Pair<Void, Boolean> ret = new MutablePair<Void, Boolean>(null, false);
 		scanGrid(new OnCell()
 		{
 			@Override
-			public boolean onCell(int row, int col, Cell c)
+			public boolean onCell(int row, int col, Cell c) throws InvalidPuzzleException
 			{
+				// blank cell...
 				if (c.digit < 0)
 				{
 					int count = c.penciled.count();
+					// no possible digit left, it is not a valid puzzle
 					if (count == 0)
-						ret.setValue(true);
+						throw new InvalidPuzzleException();
 
+					// only one possible digit left, fill the cell with it
 					if (count == 1)
 					{
 						c.digit = c.penciled.getSingle();
@@ -97,40 +126,22 @@ public class Grid implements Cloneable
 				return true;
 			}
 		});
+		
+		// Now check that the puzzle is still valid, it may not be
+		// if we fill in twice the same digit in the same row, col, or sector
+		if (ret.getValue())
+			checkValid();
 		return ret.getValue();
 	}
 
-	public boolean checkValid()
-	{
-		return scanGrid(new OnCell()
-		{
-			@Override
-			public boolean onCell(int row, int col, final Cell c1)
-			{
-				if (c1.digit < 0)
-				{
-					return c1.penciled.count() != 0;
-				}
-
-				return scanNeighbours(row, col, new OnCell()
-				{
-					@Override
-					public boolean onCell(int row, int col, Cell c2)
-					{
-						if (c1 == c2)
-							return true;
-
-						if (c2.digit < 0)
-							return true;
-
-						return c1.digit != c2.digit;
-					}
-				});
-			}
-		});
-	}
-
-	public boolean scanGrid(OnCell cb)
+	/**
+	 * Invoke the cb delegate on every cell of the grid. Stop if the cb returns false
+	 * @param cb
+	 * @return true if every cell was visited, false if cb returned false and the scan was
+	 * aborted
+	 * @throws InvalidPuzzleException
+	 */
+	public boolean scanGrid(OnCell cb) throws InvalidPuzzleException
 	{
 		for (int row = 0; row < 9; row++)
 			for (int col = 0; col < 9; col++)
@@ -142,7 +153,16 @@ public class Grid implements Cloneable
 		return true;
 	}
 
-	private boolean scanNeighbours(int row, int col, OnCell cb)
+	/**
+	 * Invoke the cb delegate on every neighbor cell. A cell is a neighbor if
+	 * it is in the same row, column or sector. A cell is a neighbor of itself
+	 * @param row
+	 * @param col
+	 * @param cb
+	 * @return
+	 * @throws InvalidPuzzleException
+	 */
+	private boolean scanNeighbors(int row, int col, OnCell cb) throws InvalidPuzzleException
 	{
 		for (int i = 0; i < 9; i++)
 		{
@@ -190,19 +210,30 @@ public class Grid implements Cloneable
 		return sb.toString();
 	}
 
+	/**
+	 * Check if the puzzle is completely filled
+	 * @return
+	 */
 	public boolean checkComplete()
 	{
-		return scanGrid(new OnCell()
+		try
 		{
-			@Override
-			public boolean onCell(int row, int col, Cell c)
+			return scanGrid(new OnCell()
 			{
-				return c.digit >= 0;
-			}
-		});
+				@Override
+				public boolean onCell(int row, int col, Cell c)
+				{
+					return c.digit >= 0;
+				}
+			});
+		}
+		catch (InvalidPuzzleException e)
+		{
+		}
+		return false;
 	}
 
-	public static void main(String[] args)
+	public static void main(String[] args) throws InvalidPuzzleException
 	{
 		BasicConfigurator.configure();
 		Grid g = new Grid();
@@ -260,8 +291,6 @@ public class Grid implements Cloneable
 			+ "9   324 5" 
 		    + "   4   2 " 
 			+ "   9  3  ");
-		*/
-		// World's hardest?
 		g.set("8        " 
 		    + "  36     " 
 			+ " 7  9 2  " 
@@ -271,12 +300,64 @@ public class Grid implements Cloneable
 			+ "  1    68" 
 		    + "  85   1 " 
 			+ " 9    4  ");
-		
+		*/
+		g.set("   4   2 " 
+		    + "9    3  5" 
+			+ " 4   76  " 
+		    + "2   38   " 
+			+ " 5     1 " 
+		    + "   91   6" 
+			+ "  68   9 " 
+		    + "7  3    2" 
+			+ " 1   5   ");
+		/*
+		g.set("     6   " 
+		    + " 59     8" 
+			+ "2    8   " 
+		    + " 45      " 
+			+ "  3      " 
+		    + "  6  3 54" 
+			+ "   324  6" 
+		    + "         " 
+			+ "         ");
+		*/
 		// @formatter:on
 
 		g.computePenciled();
 		logger.info("\n{}", g);
 		Solver s = new Solver();
 		s.solve(g, 0);
+	}
+
+	public void checkValid() throws InvalidPuzzleException
+	{
+		scanGrid(new OnCell()
+		{
+			@Override
+			public boolean onCell(int row, int col, final Cell c1) throws InvalidPuzzleException
+			{
+				if (c1.digit < 0)
+				{
+					return c1.penciled.count() != 0;
+				}
+
+				return scanNeighbors(row, col, new OnCell()
+				{
+					@Override
+					public boolean onCell(int row, int col, Cell c2) throws InvalidPuzzleException
+					{
+						if (c1 == c2)
+							return true;
+
+						if (c2.digit < 0)
+							return true;
+
+						if (c1.digit == c2.digit)
+							throw new InvalidPuzzleException();
+						return true;
+					}
+				});
+			}
+		});
 	}
 }
